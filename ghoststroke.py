@@ -1,5 +1,4 @@
 from plover.steno import Stroke
-from plover.engine import StenoEngine
 from plover import log
 
 class GhostStroke:
@@ -7,21 +6,18 @@ class GhostStroke:
     Extension that detects FP-containing strokes with no translation
     and outputs the translation without FP + period.
     """
-    def __init__(self, engine: StenoEngine) -> None:
+    def __init__(self, engine):
         log.info("GhostStroke: __init__ called")
         self.engine = engine
         self._processing = False
         log.info("GhostStroke: __init__ complete")
         
-    def start(self) -> None:
-        try:
-            log.info("GhostStroke: start() called")
-            self.engine.hook_connect('translated', self.on_translated)
-            log.info("GhostStroke: Started and hooked to 'translated'")
-        except Exception as e:
-            log.error(f"GhostStroke: Error in start(): {e}", exc_info=True)
+    def start(self):
+        log.info("GhostStroke: start() called - about to hook")
+        self.engine.hook_connect('translated', self.on_translated)
+        log.info("GhostStroke: Started and hooked to 'translated'")
         
-    def stop(self) -> None:
+    def stop(self):
         self.engine.hook_disconnect('translated', self.on_translated)
         log.info("GhostStroke: Stopped")
         
@@ -37,12 +33,12 @@ class GhostStroke:
         last = new[-1]
         
         # Debug logging
-        log.debug(f"GhostStroke: last.english = {last.english}, last.rtfcre = {last.rtfcre}")
+        log.debug("GhostStroke: last.english = %s, last.rtfcre = %s", last.english, last.rtfcre)
         
         # Check if the last translation is untranslated
         # When untranslated, english might be empty string or the raw stroke
         if last.english and last.english not in [''.join(last.rtfcre), '/'.join(last.rtfcre)]:
-            log.debug(f"GhostStroke: Skipping - has translation: {last.english}")
+            log.debug("GhostStroke: Skipping - has translation: %s", last.english)
             return
             
         # Get the strokes
@@ -51,10 +47,10 @@ class GhostStroke:
         # Check if any stroke contains both F and P
         has_fp = any('F' in s and 'P' in s for s in strokes)
         if not has_fp:
-            log.debug(f"GhostStroke: No FP found in strokes: {strokes}")
+            log.debug("GhostStroke: No FP found in strokes: %s", strokes)
             return
             
-        log.info(f"GhostStroke: Found untranslated FP stroke: {strokes}")
+        log.info("GhostStroke: Found untranslated FP stroke: %s", strokes)
             
         # Try removing FP from all strokes
         new_strokes = []
@@ -65,7 +61,7 @@ class GhostStroke:
                 # Remove F and P
                 new_str = stroke_str.replace('F', '').replace('P', '')
                 if not new_str or new_str == '-':
-                    log.debug(f"GhostStroke: Empty stroke after removing FP")
+                    log.debug("GhostStroke: Empty stroke after removing FP")
                     return  # Empty stroke, can't handle
                 new_strokes.append(new_str)
                 modified = True
@@ -75,7 +71,7 @@ class GhostStroke:
         if not modified:
             return
             
-        log.info(f"GhostStroke: Trying lookup with: {new_strokes}")
+        log.info("GhostStroke: Trying lookup with: %s", new_strokes)
             
         # Look up the modified strokes
         try:
@@ -83,7 +79,7 @@ class GhostStroke:
             result = self.engine.dictionaries.lookup(stroke_objs)
             
             if result:
-                log.info(f"GhostStroke: Found translation: {result}")
+                log.info("GhostStroke: Found translation: %s", result)
                 # Found it! Output the result with a period
                 self._processing = True
                 try:
@@ -95,8 +91,8 @@ class GhostStroke:
                 finally:
                     self._processing = False
             else:
-                log.debug(f"GhostStroke: No translation found for {new_strokes}")
+                log.debug("GhostStroke: No translation found for %s", new_strokes)
                 
         except Exception as e:
             # Log errors for debugging
-            log.error(f"GhostStroke error: {e}", exc_info=True)
+            log.error("GhostStroke error: %s", e, exc_info=True)
