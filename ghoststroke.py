@@ -1,55 +1,61 @@
-from plover.steno import Stroke
-from plover.oslayer.config import CONFIG_DIR
 import os
+from plover.steno import Stroke
+from plover.engine import StenoEngine
+from plover.oslayer.config import CONFIG_DIR
 
 class GhostStroke:
-    fname = os.path.join(CONFIG_DIR, 'ghoststroke_debug.txt')
+    fname = os.path.join(CONFIG_DIR, 'ghoststroke.txt')
     
-    def __init__(self, engine):
+    def __init__(self, engine: StenoEngine) -> None:
         super().__init__()
-        self.engine = engine
+        self.engine: StenoEngine = engine
         self._processing = False
-        
-    def start(self):
+    
+    def start(self) -> None:
         self.engine.hook_connect('translated', self.on_translated)
         self.f = open(self.fname, 'a')
-        self.f.write("=== GhostStroke started ===\n")
+        self.f.write("=== GhostStroke plugin started ===\n")
         self.f.flush()
-        
-    def stop(self):
+    
+    def stop(self) -> None:
         self.engine.hook_disconnect('translated', self.on_translated)
-        if hasattr(self, 'f'):
-            self.f.close()
-        
+        self.f.close()
+    
     def on_translated(self, old, new):
-        """Called after translation."""
-        if self._processing or not new:
+        """Called after translation with old and new states."""
+        # Prevent recursive calls
+        if self._processing:
+            return
+            
+        if not new:
             return
             
         last = new[-1]
         
-        # Check if untranslated
-        if last.english and last.english not in [''.join(last.rtfcre), '/'.join(last.rtfcre)]:
+        # Check if the last translation is untranslated
+        if last.english:
             return
             
+        # Get the strokes
         strokes = last.rtfcre
         
-        # Check for FP
+        # Check if any stroke contains both F and P
         has_fp = any('F' in s and 'P' in s for s in strokes)
         if not has_fp:
             return
             
-        print(f"Found FP stroke: {strokes}")
         self.f.write(f"Found FP stroke: {strokes}\n")
         self.f.flush()
             
-        # Remove FP
+        # Try removing FP from all strokes
         new_strokes = []
+        
         for stroke_str in strokes:
             if 'F' in stroke_str and 'P' in stroke_str:
+                # Remove F and P
                 new_str = stroke_str.replace('F', '').replace('P', '')
                 if not new_str or new_str == '-':
-                    return
+                    return  # Empty stroke, can't handle
                 new_strokes.append(new_str)
             else:
                 new_strokes.append(stroke_str)
@@ -60,13 +66,18 @@ class GhostStroke:
             result = self.engine.dictionaries.lookup(stroke_objs)
             
             if result:
-                print(f"Found translation: {result}")
+                self.f.write(f"Found translation: {result}\n")
+                self.f.flush()
+                
                 self._processing = True
                 try:
+                    # Delete the untranslated stroke output
                     for _ in range(len(strokes)):
                         self.engine.output.send_backspaces(1)
+                    # Send our translation
                     self.engine.output.send_string(result + '.')
                 finally:
                     self._processing = False
         except Exception as e:
-            print(f"Error: {e}")
+            self.f.write(f"Error: {e}\n")
+            self.f.flush()
