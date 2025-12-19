@@ -1,26 +1,25 @@
 from plover.steno import Stroke
+from plover.oslayer.config import CONFIG_DIR
+import os
 
 class GhostStroke:
+    fname = os.path.join(CONFIG_DIR, 'ghoststroke_debug.txt')
+    
     def __init__(self, engine):
+        super().__init__()
         self.engine = engine
         self._processing = False
-        # Write to file to debug
-        with open(r'C:\Users\ryant\ghoststroke_debug.txt', 'a') as f:
-            f.write("__init__ called\n")
-            f.flush()
         
     def start(self):
-        with open(r'C:\Users\ryant\ghoststroke_debug.txt', 'a') as f:
-            f.write("start() called\n")
-            f.flush()
         self.engine.hook_connect('translated', self.on_translated)
-        with open(r'C:\Users\ryant\ghoststroke_debug.txt', 'a') as f:
-            f.write("hook connected\n")
-            f.flush()
+        self.f = open(self.fname, 'a')
+        self.f.write("=== GhostStroke started ===\n")
+        self.f.flush()
         
     def stop(self):
-        print("GHOSTSTROKE STOP CALLED")
         self.engine.hook_disconnect('translated', self.on_translated)
+        if hasattr(self, 'f'):
+            self.f.close()
         
     def on_translated(self, old, new):
         """Called after translation."""
@@ -41,6 +40,8 @@ class GhostStroke:
             return
             
         print(f"Found FP stroke: {strokes}")
+        self.f.write(f"Found FP stroke: {strokes}\n")
+        self.f.flush()
             
         # Remove FP
         new_strokes = []
