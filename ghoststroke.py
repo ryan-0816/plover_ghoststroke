@@ -8,8 +8,10 @@ class GhostStroke:
     and outputs the translation without FP + period.
     """
     def __init__(self, engine: StenoEngine) -> None:
+        log.info("GhostStroke: __init__ called")
         self.engine = engine
         self._processing = False
+        log.info("GhostStroke: __init__ complete")
         
     def start(self) -> None:
         try:
