@@ -1,141 +1,78 @@
-import logging
-import os
 from plover.engine import StenoEngine
 from plover.plugin import Plugin
-
-# Set up logger
-logger = logging.getLogger('ghoststroke')
-logger.setLevel(logging.DEBUG)
-
-# Clear any existing handlers
-logger.handlers.clear()
-
-# Get Plover config directory
-config_dir = os.path.expanduser('~/.plover')
-log_file = os.path.join(config_dir, 'ghoststroke.log')
-
-# Create file handler
-fh = logging.FileHandler(log_file, mode='w')
-fh.setLevel(logging.DEBUG)
-
-# Create console handler
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-
-# Create formatter
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-ch.setFormatter(formatter)
-
-# Add handlers to logger
-logger.addHandler(fh)
-logger.addHandler(ch)
-
-logger.info("=" * 50)
-logger.info("GhostStroke plugin module loaded")
-logger.info("=" * 50)
-
 
 class GhostStroke(Plugin):
     """
     Detects outlines containing FP that have no translation.
     If removing FP yields a valid dictionary entry, outputs that entry + '.'
     """
-
     def __init__(self, engine: StenoEngine) -> None:
         super().__init__(engine)
         self._engine = engine
-        logger.info("GhostStroke plugin initialized")
-
+        
     def start(self) -> None:
-        logger.info("GhostStroke plugin starting")
-        self._engine.hook_connect('stroked', self.on_stroked)
-        logger.info("Connected to 'stroked' hook")
-
+        self._engine.hook_connect('translated', self.on_translated)
+        
     def stop(self) -> None:
-        logger.info("GhostStroke plugin stopping")
-        self._engine.hook_disconnect('stroked', self.on_stroked)
-
-    def on_stroked(self, stroke):
-        logger.debug(f"Stroke received: {stroke}")
+        self._engine.hook_disconnect('translated', self.on_translated)
         
-        # Get the translator state
-        translator = self._engine.translator
-        logger.debug(f"Translator state: {translator}")
-        logger.debug(f"Translator has {len(translator.translations)} translations")
-        
-        if not translator.translations:
-            logger.debug("No translations, returning")
+    def on_translated(self, old, new):
+        """Hook fires after translation with old/new state."""
+        if not new:
             return
             
-        # Get the last translation state
-        last_state = translator.translations[-1]
-        logger.debug(f"Last state: {last_state}")
-        logger.debug(f"Last state rtfcre: {last_state.rtfcre}")
-        logger.debug(f"Last state word: {last_state.word}")
-        logger.debug(f"Last state english: {last_state.english}")
-        logger.debug(f"Last state is_translation: {last_state.is_translation}")
+        # Get the last translation
+        last = new[-1]
         
-        # Check if untranslated
-        if last_state.word is None and last_state.english is None:
-            logger.info(f"Untranslated stroke detected: {last_state.rtfcre}")
+        # Check if it's untranslated (raw steno shown)
+        if last.english is None or not last.has_translation:
+            strokes = last.strokes
             
-            strokes = tuple(last_state.rtfcre)
-            logger.debug(f"Strokes as tuple: {strokes}")
-            
-            # Check if already in dictionary (shouldn't be, but just in case)
-            dict_lookup = self._engine.dictionaries.lookup(strokes)
-            logger.debug(f"Direct dictionary lookup: {dict_lookup}")
-            
-            if dict_lookup:
-                logger.info("Stroke already has a dictionary entry, skipping")
-                return
-                
             # Try FP recovery
-            logger.info("Attempting FP recovery")
             result = self.try_fp_recovery(strokes)
-            logger.debug(f"Recovery result: {result}")
-            
             if result:
-                logger.info(f"Successfully recovered: {result}")
-                # Send the result
-                self._engine.send_string(result + ".")
-                logger.info(f"Sent: {result + '.'}")
-            else:
-                logger.info("No FP recovery possible")
-        else:
-            logger.debug("Stroke was translated, ignoring")
-
+                # Force a new translation by manipulating the state
+                # We need to create a proper translation object
+                from plover.translation import Translation
+                
+                # Create a new translation with our result
+                new_translation = Translation(strokes, result + ".")
+                new_translation.has_translation = True
+                
+                # Replace the last translation
+                translations = list(new)
+                translations[-1] = new_translation
+                
+                # Update the formatter
+                self._engine.clear_translator_state()
+                for t in translations:
+                    self._engine.translator.translate_translation(t)
+                    
     def try_fp_recovery(self, strokes):
         """Try to recover by removing FP from strokes."""
-        logger.debug(f"Original strokes for recovery: {strokes}")
-        
         new_strokes = []
         modified = False
         
-        for i, stroke in enumerate(strokes):
-            logger.debug(f"Processing stroke {i}: {stroke}")
-            new_stroke = stroke.replace("FP", "")
-            if new_stroke != stroke:
-                modified = True
-                logger.debug(f"Modified stroke {i}: '{stroke}' -> '{new_stroke}'")
+        for stroke in strokes:
+            # Work with the stroke keys
+            keys = stroke.steno_keys if hasattr(stroke, 'steno_keys') else str(stroke)
+            new_keys = keys.replace("FP", "")
             
-            # Handle empty strokes
-            if not new_stroke:
-                new_stroke = "-"
-                logger.debug(f"Stroke {i} became empty, using '-'")
+            if new_keys != keys:
+                modified = True
                 
-            new_strokes.append(new_stroke)
+            if new_keys and new_keys != "-":
+                new_strokes.append(new_keys)
+            else:
+                return None  # Don't handle empty strokes
                 
         if not modified:
-            logger.debug("No FP found in strokes")
             return None
             
-        new_strokes_tuple = tuple(new_strokes)
-        logger.debug(f"Modified strokes: {new_strokes_tuple}")
+        # Convert back to stroke objects
+        from plover.steno import Stroke
+        stroke_objects = tuple(Stroke.from_steno(s) for s in new_strokes)
         
         # Try lookup
-        entry = self._engine.dictionaries.lookup(new_strokes_tuple)
-        logger.debug(f"Dictionary lookup result: {entry}")
-        
+        entry = self._engine.dictionaries.lookup(stroke_objects)
         return entry
