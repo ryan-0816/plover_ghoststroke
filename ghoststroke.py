@@ -1,78 +1,94 @@
-from plover.engine import StenoEngine
-from plover.plugin import Plugin
+from plover.steno import Stroke
+from plover.steno_dictionary import StenoDictionary
 
-class GhostStroke(Plugin):
+class GhostStrokeDictionary(StenoDictionary):
     """
-    Detects outlines containing FP that have no translation.
-    If removing FP yields a valid dictionary entry, outputs that entry + '.'
+    A virtual dictionary that intercepts FP-containing strokes
+    and provides translations by removing FP.
     """
-    def __init__(self, engine: StenoEngine) -> None:
-        super().__init__(engine)
-        self._engine = engine
+    
+    def __init__(self):
+        super().__init__()
+        self.enabled = True
+        self._dicts = None
         
-    def start(self) -> None:
-        self._engine.hook_connect('translated', self.on_translated)
+    def set_dicts(self, dicts):
+        """Store reference to other dictionaries for lookup."""
+        self._dicts = dicts
         
-    def stop(self) -> None:
-        self._engine.hook_disconnect('translated', self.on_translated)
-        
-    def on_translated(self, old, new):
-        """Hook fires after translation with old/new state."""
-        if not new:
-            return
+    def _lookup(self, strokes):
+        """
+        Called when Plover looks up a stroke sequence.
+        If it contains FP and has no translation, try without FP.
+        """
+        if not self._dicts:
+            return None
             
-        # Get the last translation
-        last = new[-1]
-        
-        # Check if it's untranslated (raw steno shown)
-        if last.english is None or not last.has_translation:
-            strokes = last.strokes
+        # Check if any stroke contains FP
+        has_fp = any('F' in s.keys() and 'P' in s.keys() for s in strokes)
+        if not has_fp:
+            return None
             
-            # Try FP recovery
-            result = self.try_fp_recovery(strokes)
-            if result:
-                # Force a new translation by manipulating the state
-                # We need to create a proper translation object
-                from plover.translation import Translation
-                
-                # Create a new translation with our result
-                new_translation = Translation(strokes, result + ".")
-                new_translation.has_translation = True
-                
-                # Replace the last translation
-                translations = list(new)
-                translations[-1] = new_translation
-                
-                # Update the formatter
-                self._engine.clear_translator_state()
-                for t in translations:
-                    self._engine.translator.translate_translation(t)
-                    
-    def try_fp_recovery(self, strokes):
-        """Try to recover by removing FP from strokes."""
+        # Try removing FP from all strokes
         new_strokes = []
         modified = False
         
         for stroke in strokes:
-            # Work with the stroke keys
-            keys = stroke.steno_keys if hasattr(stroke, 'steno_keys') else str(stroke)
-            new_keys = keys.replace("FP", "")
-            
-            if new_keys != keys:
-                modified = True
-                
-            if new_keys and new_keys != "-":
-                new_strokes.append(new_keys)
+            if 'F' in stroke.keys() and 'P' in stroke.keys():
+                # Remove F and P
+                keys = [k for k in stroke.keys() if k not in ('F', 'P')]
+                if keys:
+                    new_strokes.append(Stroke(keys))
+                    modified = True
+                else:
+                    # Empty stroke, bail out
+                    return None
             else:
-                return None  # Don't handle empty strokes
+                new_strokes.append(stroke)
                 
         if not modified:
             return None
             
-        # Convert back to stroke objects
-        from plover.steno import Stroke
-        stroke_objects = tuple(Stroke.from_steno(s) for s in new_strokes)
+        # Look up the modified strokes in other dictionaries
+        new_strokes_tuple = tuple(new_strokes)
+        for d in self._dicts:
+            if d == self:  # Skip self to avoid recursion
+                continue
+            result = d.lookup(new_strokes_tuple)
+            if result is not None:
+                # Found it! Add a period
+                return result + "."
+                
+        return None
         
-        # Try lookup
-        entry = self._engine.dictionaries.lookup(stroke_objects)
-        return entry
+    def reverse_lookup(self, text):
+        """Not needed for this plugin."""
+        return []
+
+
+class GhostStroke:
+    """
+    Extension that adds the ghost stroke dictionary to the stack.
+    """
+    def __init__(self, engine):
+        self._engine = engine
+        self._dict = None
+        
+    def start(self):
+        """Add our virtual dictionary to the stack."""
+        self._dict = GhostStrokeDictionary()
+        
+        # Add to dictionary stack
+        dicts = self._engine.dictionaries
+        self._dict.set_dicts(dicts.dicts)
+        
+        # Insert at high priority (near the top)
+        dicts.set_dicts([self._dict] + dicts.dicts)
+        
+    def stop(self):
+        """Remove our dictionary from the stack."""
+        if self._dict:
+            dicts = self._engine.dictionaries
+            new_dicts = [d for d in dicts.dicts if d != self._dict]
+            dicts.set_dicts(new_dicts)
+            self._dict = None
