@@ -1,5 +1,6 @@
 from plover.steno import Stroke
 from plover.engine import StenoEngine
+from plover import log
 
 class GhostStroke:
     """
@@ -12,9 +13,11 @@ class GhostStroke:
         
     def start(self) -> None:
         self.engine.hook_connect('translated', self.on_translated)
+        log.info("GhostStroke: Started and hooked to 'translated'")
         
     def stop(self) -> None:
         self.engine.hook_disconnect('translated', self.on_translated)
+        log.info("GhostStroke: Stopped")
         
     def on_translated(self, old, new):
         """Called after translation with old and new states."""
@@ -27,9 +30,13 @@ class GhostStroke:
             
         last = new[-1]
         
+        # Debug logging
+        log.debug(f"GhostStroke: last.english = {last.english}, last.rtfcre = {last.rtfcre}")
+        
         # Check if the last translation is untranslated
-        # An untranslated stroke has english=None or is the raw stroke
-        if last.english is not None and last.english:
+        # When untranslated, english might be empty string or the raw stroke
+        if last.english and last.english not in [''.join(last.rtfcre), '/'.join(last.rtfcre)]:
+            log.debug(f"GhostStroke: Skipping - has translation: {last.english}")
             return
             
         # Get the strokes
@@ -38,7 +45,10 @@ class GhostStroke:
         # Check if any stroke contains both F and P
         has_fp = any('F' in s and 'P' in s for s in strokes)
         if not has_fp:
+            log.debug(f"GhostStroke: No FP found in strokes: {strokes}")
             return
+            
+        log.info(f"GhostStroke: Found untranslated FP stroke: {strokes}")
             
         # Try removing FP from all strokes
         new_strokes = []
@@ -49,6 +59,7 @@ class GhostStroke:
                 # Remove F and P
                 new_str = stroke_str.replace('F', '').replace('P', '')
                 if not new_str or new_str == '-':
+                    log.debug(f"GhostStroke: Empty stroke after removing FP")
                     return  # Empty stroke, can't handle
                 new_strokes.append(new_str)
                 modified = True
@@ -58,12 +69,15 @@ class GhostStroke:
         if not modified:
             return
             
+        log.info(f"GhostStroke: Trying lookup with: {new_strokes}")
+            
         # Look up the modified strokes
         try:
             stroke_objs = tuple(Stroke.from_steno(s) for s in new_strokes)
             result = self.engine.dictionaries.lookup(stroke_objs)
             
             if result:
+                log.info(f"GhostStroke: Found translation: {result}")
                 # Found it! Output the result with a period
                 self._processing = True
                 try:
@@ -74,9 +88,9 @@ class GhostStroke:
                     self.engine.output.send_string(result + '.')
                 finally:
                     self._processing = False
+            else:
+                log.debug(f"GhostStroke: No translation found for {new_strokes}")
                 
         except Exception as e:
             # Log errors for debugging
-            import traceback
-            print(f"GhostStroke error: {e}")
-            traceback.print_exc()
+            log.error(f"GhostStroke error: {e}", exc_info=True)
