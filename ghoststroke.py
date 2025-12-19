@@ -1,66 +1,63 @@
 from plover.engine import StenoEngine
+from plover.plugin import Plugin
 
 
-class GhostStroke:
+class GhostStroke(Plugin):
     """
     Detects outlines containing FP that have no translation.
     If removing FP yields a valid dictionary entry, outputs that entry + '.'
     """
 
     def __init__(self, engine: StenoEngine) -> None:
-        super().__init__()
-        self.engine = engine
+        super().__init__(engine)
+        self._engine = engine
 
     def start(self) -> None:
-        self.engine.hook_connect('translated', self.on_translation)
+        self._engine.hook_connect('stroked', self.on_stroked)
 
     def stop(self) -> None:
-        self.engine.hook_disconnect('translated', self.on_translation)
+        self._engine.hook_disconnect('stroked', self.on_stroked)
 
-    def on_translation(self, old, new) -> None:
-        # find the most recent real output attempt
-        for action in reversed(new):
-            if hasattr(action, 'rtfcre') and action.text and not action.text.isspace():
-                strokes = action.rtfcre
-                break
-        else:
+    def on_stroked(self, stroke):
+        # Get the current strokes in the translator
+        translator = self._engine.translator
+        if not translator.translations:
             return
+            
+        last_state = translator.translations[-1]
+        
+        # Check if untranslated
+        if last_state.word is None:
+            strokes = tuple(last_state.rtfcre)
+            
+            # Check if already in dictionary (shouldn't be, but just in case)
+            if self._engine.dictionaries.lookup(strokes):
+                return
+                
+            # Try FP recovery
+            result = self.try_fp_recovery(strokes)
+            if result:
+                # Send the result
+                self._engine.send_string(result + ".")
 
-        outline = tuple(strokes)
-
-        # if it already translated, we do nothing
-        if self.engine.dictionaries.lookup(outline) is not None:
-            return
-
-        # attempt FP recovery
-        recovered = self.try_fp_recovery(outline)
-        if recovered is not None:
-            self.engine.send_string(recovered + ".")
-
-    def try_fp_recovery(self, outline):
-        """
-        If the outline contains FP, remove it and retry dictionary lookup.
-        """
-        new_outline = []
-        fp_found = False
-
-        for stroke in outline:
-            if "FP" in stroke:
-                stripped = stroke.replace("FP", "")
-                stripped = stripped.replace("-", "")
-                if stripped != stroke:
-                    fp_found = True
-                new_outline.append(stripped)
+    def try_fp_recovery(self, strokes):
+        """Try to recover by removing FP from strokes."""
+        new_strokes = []
+        modified = False
+        
+        for stroke in strokes:
+            new_stroke = stroke.replace("FP", "")
+            if new_stroke != stroke:
+                modified = True
+            if new_stroke:
+                new_strokes.append(new_stroke)
             else:
-                new_outline.append(stroke)
-
-        if not fp_found:
+                # Empty stroke after removing FP
+                new_strokes.append("-")
+                
+        if not modified:
             return None
-
-        new_outline = tuple(new_outline)
-
-        entry = self.engine.dictionaries.lookup(new_outline)
-        if entry is None:
-            return None
-
+            
+        # Try lookup
+        entry = self._engine.dictionaries.lookup(tuple(new_strokes))
         return entry
