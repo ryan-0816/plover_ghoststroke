@@ -1,4 +1,5 @@
 import logging
+import os
 from plover.engine import StenoEngine
 from plover.plugin import Plugin
 
@@ -6,12 +7,33 @@ from plover.plugin import Plugin
 logger = logging.getLogger('ghoststroke')
 logger.setLevel(logging.DEBUG)
 
+# Clear any existing handlers
+logger.handlers.clear()
+
+# Get Plover config directory
+config_dir = os.path.expanduser('~/.plover')
+log_file = os.path.join(config_dir, 'ghoststroke.log')
+
+# Create file handler
+fh = logging.FileHandler(log_file, mode='w')
+fh.setLevel(logging.DEBUG)
+
 # Create console handler
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
+
+# Create formatter
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
 ch.setFormatter(formatter)
+
+# Add handlers to logger
+logger.addHandler(fh)
 logger.addHandler(ch)
+
+logger.info("=" * 50)
+logger.info("GhostStroke plugin module loaded")
+logger.info("=" * 50)
 
 
 class GhostStroke(Plugin):
