@@ -1,94 +1,82 @@
 from plover.steno import Stroke
-from plover.steno_dictionary import StenoDictionary
+from plover.engine import StenoEngine
 
-class GhostStrokeDictionary(StenoDictionary):
+class GhostStroke:
     """
-    A virtual dictionary that intercepts FP-containing strokes
-    and provides translations by removing FP.
+    Extension that detects FP-containing strokes with no translation
+    and outputs the translation without FP + period.
     """
-    
-    def __init__(self):
-        super().__init__()
-        self.enabled = True
-        self._dicts = None
+    def __init__(self, engine: StenoEngine) -> None:
+        self.engine = engine
+        self._processing = False
         
-    def set_dicts(self, dicts):
-        """Store reference to other dictionaries for lookup."""
-        self._dicts = dicts
+    def start(self) -> None:
+        self.engine.hook_connect('translated', self.on_translated)
         
-    def _lookup(self, strokes):
-        """
-        Called when Plover looks up a stroke sequence.
-        If it contains FP and has no translation, try without FP.
-        """
-        if not self._dicts:
-            return None
+    def stop(self) -> None:
+        self.engine.hook_disconnect('translated', self.on_translated)
+        
+    def on_translated(self, old, new):
+        """Called after translation with old and new states."""
+        # Prevent recursive calls
+        if self._processing:
+            return
             
-        # Check if any stroke contains FP
-        has_fp = any('F' in s.keys() and 'P' in s.keys() for s in strokes)
+        if not new:
+            return
+            
+        last = new[-1]
+        
+        # Check if the last translation is untranslated
+        # An untranslated stroke has english=None or is the raw stroke
+        if last.english is not None and last.english:
+            return
+            
+        # Get the strokes
+        strokes = last.rtfcre
+        
+        # Check if any stroke contains both F and P
+        has_fp = any('F' in s and 'P' in s for s in strokes)
         if not has_fp:
-            return None
+            return
             
         # Try removing FP from all strokes
         new_strokes = []
         modified = False
         
-        for stroke in strokes:
-            if 'F' in stroke.keys() and 'P' in stroke.keys():
+        for stroke_str in strokes:
+            if 'F' in stroke_str and 'P' in stroke_str:
                 # Remove F and P
-                keys = [k for k in stroke.keys() if k not in ('F', 'P')]
-                if keys:
-                    new_strokes.append(Stroke(keys))
-                    modified = True
-                else:
-                    # Empty stroke, bail out
-                    return None
+                new_str = stroke_str.replace('F', '').replace('P', '')
+                if not new_str or new_str == '-':
+                    return  # Empty stroke, can't handle
+                new_strokes.append(new_str)
+                modified = True
             else:
-                new_strokes.append(stroke)
-                
+                new_strokes.append(stroke_str)
+        
         if not modified:
-            return None
+            return
             
-        # Look up the modified strokes in other dictionaries
-        new_strokes_tuple = tuple(new_strokes)
-        for d in self._dicts:
-            if d == self:  # Skip self to avoid recursion
-                continue
-            result = d.lookup(new_strokes_tuple)
-            if result is not None:
-                # Found it! Add a period
-                return result + "."
+        # Look up the modified strokes
+        try:
+            stroke_objs = tuple(Stroke.from_steno(s) for s in new_strokes)
+            result = self.engine.dictionaries.lookup(stroke_objs)
+            
+            if result:
+                # Found it! Output the result with a period
+                self._processing = True
+                try:
+                    # Delete the untranslated stroke output first
+                    for _ in range(len(strokes)):
+                        self.engine.output.send_backspaces(1)
+                    # Now send our translation
+                    self.engine.output.send_string(result + '.')
+                finally:
+                    self._processing = False
                 
-        return None
-        
-    def reverse_lookup(self, text):
-        """Not needed for this plugin."""
-        return []
-
-
-class GhostStroke:
-    """
-    Extension that adds the ghost stroke dictionary to the stack.
-    """
-    def __init__(self, engine):
-        self._engine = engine
-        self._dict = None
-        
-    def start(self):
-        """Add our virtual dictionary to the stack."""
-        self._dict = GhostStrokeDictionary()
-        
-        # Add to dictionary stack
-        dicts = self._engine.dictionaries
-        self._dict.set_dicts(dicts.dicts)
-        
-        # Insert at high priority (near the top)
-        dicts.set_dicts([self._dict] + dicts.dicts)
-        
-    def stop(self):
-        """Remove our dictionary from the stack."""
-        if self._dict:
-            dicts = self._engine.dictionaries
-            new_dicts = [d for d in dicts.dicts if d != self._dict]
-            dicts.set_dicts(new_dicts)
-            self._dict = None
+        except Exception as e:
+            # Log errors for debugging
+            import traceback
+            print(f"GhostStroke error: {e}")
+            traceback.print_exc()
