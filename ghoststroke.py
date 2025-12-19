@@ -8,6 +8,7 @@ class GhostStroke:
     """
 
     def __init__(self, engine: StenoEngine) -> None:
+        super().__init__()
         self.engine = engine
 
     def start(self) -> None:
@@ -19,7 +20,7 @@ class GhostStroke:
     def on_translation(self, old, new) -> None:
         # find the most recent real output attempt
         for action in reversed(new):
-            if action.text and not action.text.isspace():
+            if hasattr(action, 'rtfcre') and action.text and not action.text.isspace():
                 strokes = action.rtfcre
                 break
         else:
@@ -41,13 +42,12 @@ class GhostStroke:
         If the outline contains FP, remove it and retry dictionary lookup.
         """
         new_outline = []
-
         fp_found = False
+
         for stroke in outline:
             if "FP" in stroke:
                 stripped = stroke.replace("FP", "")
-                if stripped[-1] == "-":
-                    stripped.replace("-", "")
+                stripped = stripped.replace("-", "")
                 if stripped != stroke:
                     fp_found = True
                 new_outline.append(stripped)
