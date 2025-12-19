@@ -1,1 +1,1 @@
-# plover_ghoststroke
+Ghost Stroke is a plover plugin where if a certain stroke is not found in a dictionary, it will output something different.
