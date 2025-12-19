@@ -12,8 +12,12 @@ class GhostStroke:
         self._processing = False
         
     def start(self) -> None:
-        self.engine.hook_connect('translated', self.on_translated)
-        log.info("GhostStroke: Started and hooked to 'translated'")
+        try:
+            log.info("GhostStroke: start() called")
+            self.engine.hook_connect('translated', self.on_translated)
+            log.info("GhostStroke: Started and hooked to 'translated'")
+        except Exception as e:
+            log.error(f"GhostStroke: Error in start(): {e}", exc_info=True)
         
     def stop(self) -> None:
         self.engine.hook_disconnect('translated', self.on_translated)
