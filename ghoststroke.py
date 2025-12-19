@@ -46,6 +46,8 @@ class GhostStroke:
         for stroke in outline:
             if "FP" in stroke:
                 stripped = stroke.replace("FP", "")
+                if stripped[-1] == "-":
+                    stripped.replace("-", "")
                 if stripped != stroke:
                     fp_found = True
                 new_outline.append(stripped)
