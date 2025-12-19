@@ -4,16 +4,19 @@ class GhostStroke:
     def __init__(self, engine):
         self.engine = engine
         self._processing = False
-        # Try multiple ways to output
-        print("=" * 50)
-        print("GHOSTSTROKE __INIT__ CALLED")
-        print("=" * 50)
+        # Write to file to debug
+        with open(r'C:\Users\ryant\ghoststroke_debug.txt', 'a') as f:
+            f.write("__init__ called\n")
+            f.flush()
         
     def start(self):
-        print("=" * 50)
-        print("GHOSTSTROKE START CALLED")
-        print("=" * 50)
+        with open(r'C:\Users\ryant\ghoststroke_debug.txt', 'a') as f:
+            f.write("start() called\n")
+            f.flush()
         self.engine.hook_connect('translated', self.on_translated)
+        with open(r'C:\Users\ryant\ghoststroke_debug.txt', 'a') as f:
+            f.write("hook connected\n")
+            f.flush()
         
     def stop(self):
         print("GHOSTSTROKE STOP CALLED")
