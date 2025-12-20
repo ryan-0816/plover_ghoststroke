@@ -21,7 +21,7 @@ class GhostStroke:
         self.f.flush()
 
         self.engine.hook_connect('stroked', self.on_stroked)
-        self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'stroked'\n")
+        self.f.write(f"[{datetime.now().strftime('%F %T')}] Hooks connected\n")
         self.f.flush()
 
     def stop(self) -> None:
@@ -39,10 +39,11 @@ class GhostStroke:
         self.f.write(f"[{datetime.now().strftime('%F %T')}] Received stroke: {stroke_str}\n")
         self.f.flush()
 
-        if ("FP" or "FRP") not in stroke_str:
+        # Check for FP or FRP
+        if "FP" not in stroke_str and "FRP" not in stroke_str:
             return
 
-        self.f.write(f"Found FP in stroke: {stroke_str}\n")
+        self.f.write(f"Found FP/FRP in stroke: {stroke_str}\n")
         self.f.flush()
 
         # First check if the FULL chord (with FP) exists in dictionary
@@ -59,49 +60,103 @@ class GhostStroke:
         self.f.write(f"Full chord '{stroke_str}' NOT in dictionary, processing...\n")
         self.f.flush()
 
-        # Remove "FP" substring
-        cleaned = stroke_str.replace('FP', '').replace('FRP', 'R')
-        if cleaned.endswith('-'):
-            cleaned = cleaned[:-1]
-        if not cleaned:
+        # Remove "FP" or "FRP" substring
+        cleaned_last = stroke_str.replace('FRP', 'R').replace('FP', '')
+        if cleaned_last.endswith('-'):
+            cleaned_last = cleaned_last[:-1]
+        if not cleaned_last:
             self.f.write("Stroke empty after FP removal, skipping\n")
             self.f.flush()
             return
 
-        try:
-            result = self.engine.dictionaries.lookup((cleaned,))
-        except Exception as e:
-            self.f.write(f"Error looking up cleaned stroke: {e}\n")
-            self.f.flush()
-            return
+        # Get recent translations to look back
+        translator_state = self.engine._translator.get_state()
+        translations = translator_state.translations if translator_state else []
+        
+        self.f.write(f"Looking back through {len(translations)} recent translations\n")
+        self.f.flush()
 
-        if result:
-            self.f.write(f"Translation found for cleaned stroke: {result}\n")
+        # Try to find the longest matching multi-stroke word
+        best_match = None
+        best_strokes = None
+        best_backspace_count = 0
+        
+        # Try looking back up to 5 strokes
+        for lookback in range(1, min(6, len(translations) + 1)):
+            # Get the last N translations
+            recent_translations = translations[-lookback:] if lookback <= len(translations) else []
+            
+            # Build the stroke sequence
+            stroke_sequence = []
+            total_output = ""
+            
+            for trans in recent_translations:
+                for s in trans.strokes:
+                    stroke_sequence.append(s.rtfcre)
+                # Accumulate the output text
+                if hasattr(trans, 'english'):
+                    total_output += trans.english or ""
+            
+            # Replace the last stroke with the cleaned version
+            if stroke_sequence:
+                stroke_sequence[-1] = cleaned_last
+                stroke_tuple = tuple(stroke_sequence)
+                
+                self.f.write(f"Trying stroke sequence (lookback={lookback}): {stroke_tuple}\n")
+                self.f.flush()
+                
+                try:
+                    result = self.engine.dictionaries.lookup(stroke_tuple)
+                    if result:
+                        self.f.write(f"Found match: {result} for {stroke_tuple}\n")
+                        self.f.flush()
+                        # Calculate total output length to backspace
+                        backspace_count = len(total_output) + len(stroke_str)  # Include the current raw stroke
+                        best_match = result
+                        best_strokes = stroke_tuple
+                        best_backspace_count = backspace_count
+                        # Keep looking for longer matches
+                except Exception as e:
+                    self.f.write(f"Lookup error for {stroke_tuple}: {e}\n")
+                    self.f.flush()
+        
+        # If no multi-stroke match found, try single stroke
+        if not best_match:
+            try:
+                result = self.engine.dictionaries.lookup((cleaned_last,))
+                if result:
+                    self.f.write(f"Single stroke translation found: {result}\n")
+                    self.f.flush()
+                    best_match = result
+                    best_strokes = (cleaned_last,)
+                    best_backspace_count = len(stroke_str)
+            except Exception as e:
+                self.f.write(f"Error looking up single cleaned stroke: {e}\n")
+                self.f.flush()
+
+        if best_match:
+            self.f.write(f"Best match: '{best_match}' from strokes {best_strokes}, backspacing {best_backspace_count}\n")
             self.f.flush()
+            
             self._processing = True
             try:
-                # Use keyboard module to send backspaces and text
                 from plover.oslayer import keyboardcontrol
                 kb = keyboardcontrol.KeyboardEmulation()
                 
                 # Send backspaces
-                backspace_count = len(stroke_str)
-                self.f.write(f"Sending {backspace_count} backspaces\n")
-                self.f.flush()
-                
-                kb.send_backspaces(backspace_count)
+                kb.send_backspaces(best_backspace_count)
                 
                 # Send the translation with period and space
-                kb.send_string(result + '. ')
+                kb.send_string(best_match + '. ')
                 
                 # Trigger capitalization for the next word
                 cap_stroke = Stroke.from_steno('KPA*')
                 self.engine._machine_stroke_callback(cap_stroke)
                 
-                self.f.write(f"Sent: '{result}. ' + cap stroke\n")
+                self.f.write(f"Sent: '{best_match}. ' + cap stroke\n")
                 self.f.flush()
             finally:
                 self._processing = False
         else:
-            self.f.write(f"No translation found for cleaned stroke '{cleaned}', leaving raw steno\n")
+            self.f.write(f"No translation found for any combination, leaving raw steno\n")
             self.f.flush()
