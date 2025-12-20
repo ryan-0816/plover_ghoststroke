@@ -153,11 +153,7 @@ class GhostStroke:
                 period_stroke = Stroke.from_steno('TP-PL')
                 self.engine._machine_stroke_callback(period_stroke)
                 
-                # Trigger capitalization for the next word
-                cap_stroke = Stroke.from_steno('KPA*')
-                self.engine._machine_stroke_callback(cap_stroke)
-                
-                self.f.write(f"Sent: '{best_match}' + TP-PL + cap stroke\n")
+                self.f.write(f"Sent: '{best_match}' + TP-PL\n")
                 self.f.flush()
             finally:
                 self._processing = False
