@@ -69,7 +69,10 @@ class GhostStroke:
                 self.f.flush()
                 self._processing = True
                 try:
-                    # Use insert_text to reliably output the translation + period
-                    self.engine.output.insert_text(result + '.')
+                    # Delete the original untranslated chord output
+                    for _ in range(len(text)):
+                        self.engine.output.send_backspaces(1)
+                    # Send the translation with a period
+                    self.engine.output.send_string(result + '.')
                 finally:
                     self._processing = False
