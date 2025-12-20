@@ -80,6 +80,7 @@ class GhostStroke:
         best_match = None
         best_strokes = None
         best_backspace_count = 0
+        original_output = ""
         
         # Try looking back up to 5 strokes
         for lookback in range(1, min(6, len(translations) + 1)):
@@ -115,6 +116,7 @@ class GhostStroke:
                         best_match = result
                         best_strokes = stroke_tuple
                         best_backspace_count = backspace_count
+                        original_output = total_output
                         # Keep looking for longer matches
                 except Exception as e:
                     self.f.write(f"Lookup error for {stroke_tuple}: {e}\n")
@@ -130,6 +132,7 @@ class GhostStroke:
                     best_match = result
                     best_strokes = (cleaned_last,)
                     best_backspace_count = len(stroke_str)
+                    original_output = ""  # No previous output for single stroke
             except Exception as e:
                 self.f.write(f"Error looking up single cleaned stroke: {e}\n")
                 self.f.flush()
@@ -137,6 +140,31 @@ class GhostStroke:
         if best_match:
             self.f.write(f"Best match: '{best_match}' from strokes {best_strokes}, backspacing {best_backspace_count}\n")
             self.f.flush()
+            
+            # Check if the original output (what would have been typed) starts with a capital
+            # We need to check what the raw translation would be without FP
+            should_capitalize = False
+            if original_output:
+                # Check if original output was capitalized
+                if original_output and original_output[0].isupper():
+                    should_capitalize = True
+                    self.f.write(f"Original output '{original_output}' was capitalized\n")
+                    self.f.flush()
+            else:
+                # For single strokes, check the dictionary result directly
+                # The raw stroke output would be the stroke itself, check if translation is normally capitalized
+                # We can't easily tell, so check if the best_match from dict is capitalized
+                if best_match and best_match[0].isupper():
+                    should_capitalize = True
+                    self.f.write(f"Dictionary result '{best_match}' is capitalized\n")
+                    self.f.flush()
+            
+            # Apply capitalization if needed
+            output_word = best_match
+            if should_capitalize and output_word:
+                output_word = output_word[0].upper() + output_word[1:] if len(output_word) > 1 else output_word.upper()
+                self.f.write(f"Capitalizing output: '{output_word}'\n")
+                self.f.flush()
             
             self._processing = True
             try:
@@ -146,14 +174,14 @@ class GhostStroke:
                 # Send backspaces
                 kb.send_backspaces(best_backspace_count)
                 
-                # Send the word
-                kb.send_string(best_match)
+                # Send the word (with capitalization if needed)
+                kb.send_string(output_word)
                 
                 # Send period stroke (TP-PL) for proper formatting
                 period_stroke = Stroke.from_steno('TP-PL')
                 self.engine._machine_stroke_callback(period_stroke)
                 
-                self.f.write(f"Sent: '{best_match}' + TP-PL\n")
+                self.f.write(f"Sent: '{output_word}' + TP-PL\n")
                 self.f.flush()
             finally:
                 self._processing = False
