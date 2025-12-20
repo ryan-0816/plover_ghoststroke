@@ -3,7 +3,6 @@ from datetime import datetime
 
 from plover.steno import Stroke
 from plover.engine import StenoEngine
-from plover.formatting import RetroFormatter
 from plover.oslayer.config import CONFIG_DIR
 
 class GhostStroke:
@@ -19,6 +18,7 @@ class GhostStroke:
         # Ensure config directory exists
         os.makedirs(CONFIG_DIR, exist_ok=True)
 
+        # Open log file
         try:
             self.f = open(self.fname, 'a', encoding='utf-8')
             self.f.write(f"[{datetime.now().strftime('%F %T')}] === GhostStroke plugin started ===\n")
@@ -27,40 +27,50 @@ class GhostStroke:
             print(f"[GhostStroke] Failed to open log file: {e}")
             self.f = None
 
-        self.engine.hook_connect('translated', self.on_translated)
-        if self.f:
-            self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'translated'\n")
-            self.f.flush()
+        # Hook the translator_state 'translated' event (Plover 4+)
+        if hasattr(self.engine, "translator_state"):
+            self.engine.translator_state.hook_connect('translated', self.on_translated)
+            if self.f:
+                self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'translated' on translator_state\n")
+                self.f.flush()
+        else:
+            if self.f:
+                self.f.write(f"[{datetime.now().strftime('%F %T')}] ERROR: engine has no translator_state\n")
+                self.f.flush()
 
     def stop(self) -> None:
-        self.engine.hook_disconnect('translated', self.on_translated)
+        if hasattr(self.engine, "translator_state"):
+            self.engine.translator_state.hook_disconnect('translated', self.on_translated)
         if self.f:
             self.f.write(f"[{datetime.now().strftime('%F %T')}] === GhostStroke plugin stopped ===\n")
             self.f.close()
             self.f = None
 
     def on_translated(self, old, new):
+        """Called after translation; logs strokes and applies FP detection/replacement."""
         if not self.f:
             return
 
         try:
-            # Iterate through recent translations in reverse order
-            for phrase in reversed(new):
-                # Skip phrases with no strokes
-                if not getattr(phrase, 'rtfcre', None):
-                    continue
+            # Minimal log to confirm the hook is firing
+            self.f.write(f"[{datetime.now().strftime('%F %T')}] on_translated fired! new={new}\n")
+            self.f.flush()
 
-                strokes = phrase.rtfcre
+            # Iterate through new translations
+            for phrase in reversed(new):
+                strokes = getattr(phrase, 'rtfcre', None)
+                if not strokes:
+                    continue  # Skip if no strokes
+
                 self.f.write(f"[{datetime.now().strftime('%F %T')}] Received strokes: {strokes}\n")
                 self.f.flush()
 
-                # Skip if already processed
                 if self._processing:
                     self.f.write("Skipping: already processing\n")
                     self.f.flush()
                     continue
 
-                # Check if any stroke contains both F and P
+                # Check for strokes containing both F and P
                 has_fp = any('F' in s and 'P' in s for s in strokes)
                 if not has_fp:
                     continue
@@ -81,7 +91,7 @@ class GhostStroke:
                     else:
                         new_strokes.append(stroke_str)
 
-                # Lookup in dictionaries
+                # Lookup translation
                 stroke_objs = tuple(Stroke.from_steno(s) for s in new_strokes)
                 result = self.engine.dictionaries.lookup(stroke_objs)
 
@@ -90,7 +100,7 @@ class GhostStroke:
                     self.f.flush()
                     self._processing = True
                     try:
-                        # Delete the untranslated stroke output
+                        # Remove the untranslated stroke output
                         for _ in range(len(strokes)):
                             self.engine.output.send_backspaces(1)
                         # Send our translation
