@@ -46,8 +46,8 @@ class GhostStroke:
         self.f.flush()
 
         cleaned = stroke_str.replace('FP', '')
-        if cleaned[-1] == "-":
-            cleaned = cleaned.replace("-", "")
+        if cleaned.endswith('-'):
+            cleaned = cleaned[:-1]
         if not cleaned:
             self.f.write("Stroke empty after FP removal, skipping\n")
             self.f.flush()
@@ -69,14 +69,22 @@ class GhostStroke:
                 from plover.oslayer import keyboardcontrol
                 kb = keyboardcontrol.KeyboardEmulation()
                 
-                # Send backspaces
-                for _ in range(len(stroke_str)):
-                    kb.send_backspaces(1)
+                # The raw steno output is the stroke_str itself (e.g., "TKPWAEUFP")
+                # We need to delete exactly that many characters
+                backspace_count = len(stroke_str)
+                self.f.write(f"Sending {backspace_count} backspaces for '{stroke_str}'\n")
+                self.f.flush()
                 
-                # Send the translation with period
-                kb.send_string(result + '{.}')
+                kb.send_backspaces(backspace_count)
                 
-                self.f.write(f"Sent via keyboard emulation\n")
+                # Send the translation with period and space
+                kb.send_string(result + '. ')
+                
+                # Trigger capitalization for the next word by sending a capitalization stroke
+                cap_stroke = Stroke.from_steno('KPA*')  # Standard cap next word stroke
+                self.engine._machine_stroke_callback(cap_stroke)
+                
+                self.f.write(f"Sent via keyboard emulation: '{result}. ' + capitalization stroke\n")
                 self.f.flush()
             finally:
                 self._processing = False
