@@ -19,6 +19,7 @@ class GhostStroke:
         self.f.write(f"[{datetime.now().strftime('%F %T')}] === GhostStroke plugin started ===\n")
         self.f.flush()
 
+        # Hook translated event
         self.engine.hook_connect('translated', self.on_translated)
         self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'translated'\n")
         self.f.flush()
@@ -68,10 +69,7 @@ class GhostStroke:
                 self.f.flush()
                 self._processing = True
                 try:
-                    # Remove the original untranslated chord output
-                    for _ in range(len(text)):
-                        self.engine.output.send_backspaces(1)
-                    # Send the translation with a period
-                    self.engine.output.send_string(result + '.')
+                    # Use insert_text to reliably output the translation + period
+                    self.engine.output.insert_text(result + '.')
                 finally:
                     self._processing = False
