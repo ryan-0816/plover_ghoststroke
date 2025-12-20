@@ -12,6 +12,7 @@ class GhostStroke:
         super().__init__()
         self.engine: StenoEngine = engine
         self._processing = False
+        self._period_sent = False
         self.f = None
 
     def start(self) -> None:
@@ -38,6 +39,35 @@ class GhostStroke:
         
         self.f.write(f"[{datetime.now().strftime('%F %T')}] Received stroke: {stroke_str}\n")
         self.f.flush()
+
+        # If we just sent a period, check if we need to add a space before this stroke
+        if self._period_sent:
+            self._period_sent = False
+            
+            # Check if this stroke produces punctuation or a word
+            try:
+                result = self.engine.dictionaries.lookup((stroke_str,))
+                if result:
+                    # Check if the result is punctuation (starts with non-alphanumeric)
+                    if result and len(result) > 0:
+                        first_char = result.lstrip()[0] if result.lstrip() else ''
+                        # If it's a letter or number, add space before it
+                        if first_char.isalnum():
+                            self.f.write(f"Next stroke is word '{result}', adding space\n")
+                            self.f.flush()
+                            from plover.oslayer import keyboardcontrol
+                            kb = keyboardcontrol.KeyboardEmulation()
+                            kb.send_string(' ')
+                        else:
+                            self.f.write(f"Next stroke is punctuation '{result}', no space\n")
+                            self.f.flush()
+            except Exception as e:
+                # If lookup fails, assume it's a word and add space
+                self.f.write(f"Lookup failed, adding space by default: {e}\n")
+                self.f.flush()
+                from plover.oslayer import keyboardcontrol
+                kb = keyboardcontrol.KeyboardEmulation()
+                kb.send_string(' ')
 
         # Check for FP or FRP
         if "FP" not in stroke_str and "FRP" not in stroke_str:
@@ -146,19 +176,17 @@ class GhostStroke:
                 # Send backspaces
                 kb.send_backspaces(best_backspace_count)
                 
-                # Send the word
-                kb.send_string(best_match)
+                # Send the translation with period (no space)
+                kb.send_string(best_match + '.')
                 
-                # Send a period stroke (TP-PL) which has proper spacing rules
-                # This will attach the period and set up proper spacing for the next word
-                period_stroke = Stroke.from_steno('TP-PL')
-                self.engine._machine_stroke_callback(period_stroke)
+                # Mark that we just sent a period
+                self._period_sent = True
                 
                 # Trigger capitalization for the next word
                 cap_stroke = Stroke.from_steno('KPA*')
                 self.engine._machine_stroke_callback(cap_stroke)
                 
-                self.f.write(f"Sent: '{best_match}' + period stroke + cap stroke\n")
+                self.f.write(f"Sent: '{best_match}.' + cap stroke, will check next stroke for spacing\n")
                 self.f.flush()
             finally:
                 self._processing = False
