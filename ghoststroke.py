@@ -69,7 +69,7 @@ class GhostStroke:
             self._processing = True
             try:
                 # Delete the original untranslated stroke output (TKPWAEUFP)
-                self.engine.output.send_backspaces(len(stroke_str))
+                self.engine._output.send_backspaces(len(stroke_str))
                 self.f.write(f"Sent {len(stroke_str)} backspaces\n")
                 self.f.flush()
                 
