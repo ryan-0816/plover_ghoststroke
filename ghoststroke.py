@@ -27,20 +27,15 @@ class GhostStroke:
             print(f"[GhostStroke] Failed to open log file: {e}")
             self.f = None
 
-        # Hook the translator_state 'translated' event (Plover 4+)
-        if hasattr(self.engine, "translator_state"):
-            self.engine.translator_state.hook_connect('translated', self.on_translated)
-            if self.f:
-                self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'translated' on translator_state\n")
-                self.f.flush()
-        else:
-            if self.f:
-                self.f.write(f"[{datetime.now().strftime('%F %T')}] ERROR: engine has no translator_state\n")
-                self.f.flush()
+        # Hook translated event on engine (correct for Plover 4+)
+        self.engine.hook_connect('translated', self.on_translated)
+        if self.f:
+            self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'translated' on engine\n")
+            self.f.flush()
 
     def stop(self) -> None:
-        if hasattr(self.engine, "translator_state"):
-            self.engine.translator_state.hook_disconnect('translated', self.on_translated)
+        # Disconnect hook
+        self.engine.hook_disconnect('translated', self.on_translated)
         if self.f:
             self.f.write(f"[{datetime.now().strftime('%F %T')}] === GhostStroke plugin stopped ===\n")
             self.f.close()
@@ -52,15 +47,14 @@ class GhostStroke:
             return
 
         try:
-            # Minimal log to confirm the hook is firing
+            # Minimal log to confirm hook firing
             self.f.write(f"[{datetime.now().strftime('%F %T')}] on_translated fired! new={new}\n")
             self.f.flush()
 
-            # Iterate through new translations
             for phrase in reversed(new):
                 strokes = getattr(phrase, 'rtfcre', None)
                 if not strokes:
-                    continue  # Skip if no strokes
+                    continue
 
                 self.f.write(f"[{datetime.now().strftime('%F %T')}] Received strokes: {strokes}\n")
                 self.f.flush()
@@ -100,7 +94,7 @@ class GhostStroke:
                     self.f.flush()
                     self._processing = True
                     try:
-                        # Remove the untranslated stroke output
+                        # Remove untranslated output
                         for _ in range(len(strokes)):
                             self.engine.output.send_backspaces(1)
                         # Send our translation
