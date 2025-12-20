@@ -4,7 +4,6 @@ from datetime import datetime
 from plover.engine import StenoEngine
 from plover.oslayer.config import CONFIG_DIR
 from plover.steno import Stroke
-from plover.translation import Translation
 
 class GhostStroke:
     fname = os.path.join(CONFIG_DIR, 'ghoststroke.txt')
@@ -21,7 +20,7 @@ class GhostStroke:
         self.f.write(f"[{datetime.now().strftime('%F %T')}] === GhostStroke plugin started ===\n")
         self.f.flush()
 
-        # Hook stroked event
+        # Hook stroked event instead of translated
         self.engine.hook_connect('stroked', self.on_stroked)
         self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'stroked'\n")
         self.f.flush()
@@ -69,14 +68,17 @@ class GhostStroke:
             self.f.flush()
             self._processing = True
             try:
-                # Send backspaces to delete the raw steno that was output
-                self.engine.send_backspaces(len(stroke_str))
+                # Delete the original untranslated stroke output (TKPWAEUFP)
+                self.engine.output.send_backspaces(len(stroke_str))
                 self.f.write(f"Sent {len(stroke_str)} backspaces\n")
                 self.f.flush()
                 
-                # Send the translated text with a period
-                self.engine.send_string(result + '.')
-                self.f.write(f"Sent string: {result}.\n")
-                self.f.flush()
+                # Create a new stroke without FP and send it
+                new_stroke = Stroke.from_steno(cleaned)
+                self.engine._machine_stroke_callback(new_stroke)
+                
+                # Add a period stroke
+                period_stroke = Stroke.from_steno('TP-PL')  # Standard period stroke, adjust if needed
+                self.engine._machine_stroke_callback(period_stroke)
             finally:
                 self._processing = False
