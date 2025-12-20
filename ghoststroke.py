@@ -46,6 +46,8 @@ class GhostStroke:
         self.f.flush()
 
         cleaned = stroke_str.replace('FP', '')
+        if cleaned[-1] == "-":
+            cleaned = cleaned.replace("-", "")
         if not cleaned:
             self.f.write("Stroke empty after FP removal, skipping\n")
             self.f.flush()
