@@ -19,7 +19,6 @@ class GhostStroke:
         self.f.write(f"[{datetime.now().strftime('%F %T')}] === GhostStroke plugin started ===\n")
         self.f.flush()
 
-        # Hook translated event
         self.engine.hook_connect('translated', self.on_translated)
         self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'translated'\n")
         self.f.flush()
@@ -57,7 +56,7 @@ class GhostStroke:
                 continue
 
             try:
-                # Lookup in dictionary using tuple of strings (not Stroke objects)
+                # Lookup in dictionary using tuple of strings
                 result = self.engine.dictionaries.lookup((cleaned,))
             except Exception as e:
                 self.f.write(f"Error looking up cleaned chord: {e}\n")
@@ -69,10 +68,10 @@ class GhostStroke:
                 self.f.flush()
                 self._processing = True
                 try:
-                    # Delete original untranslated output
+                    # Remove the original untranslated chord output
                     for _ in range(len(text)):
                         self.engine.output.send_backspaces(1)
-                    # Send the translation
+                    # Send the translation with a period
                     self.engine.output.send_string(result + '.')
                 finally:
                     self._processing = False
