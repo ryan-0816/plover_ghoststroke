@@ -8,10 +8,10 @@ However, this only works if the chord "TKPWAEUFP" is not found in any dictionary
 
 Other examples:
 
-PHOR/PWEUD → morbid
+PHOR/PWEUD → morbid\n
 PHOR/PWEUFPD → morbid.
 
-WOUT → without
+WOUT → without\n
 WOUFPT → without.
 
 Still a work in progress!
