@@ -146,14 +146,18 @@ class GhostStroke:
                 # Send backspaces
                 kb.send_backspaces(best_backspace_count)
                 
-                # Send the translation with period and space
-                kb.send_string(best_match + '. ')
+                # Send the word
+                kb.send_string(best_match)
+                
+                # Send period stroke (TP-PL) for proper formatting
+                period_stroke = Stroke.from_steno('TP-PL')
+                self.engine._machine_stroke_callback(period_stroke)
                 
                 # Trigger capitalization for the next word
                 cap_stroke = Stroke.from_steno('KPA*')
                 self.engine._machine_stroke_callback(cap_stroke)
                 
-                self.f.write(f"Sent: '{best_match}. ' + cap stroke\n")
+                self.f.write(f"Sent: '{best_match}' + TP-PL + cap stroke\n")
                 self.f.flush()
             finally:
                 self._processing = False
