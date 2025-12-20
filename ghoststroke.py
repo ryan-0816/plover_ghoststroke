@@ -74,7 +74,7 @@ class GhostStroke:
                     kb.send_backspaces(1)
                 
                 # Send the translation with period
-                kb.send_string(result + '.')
+                kb.send_string(result + '{.}')
                 
                 self.f.write(f"Sent via keyboard emulation\n")
                 self.f.flush()
