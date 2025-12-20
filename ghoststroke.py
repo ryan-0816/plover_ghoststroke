@@ -25,13 +25,14 @@ class GhostStroke:
             print(f"[GhostStroke] Failed to open log file: {e}")
             self.f = None
 
-        # Correct hook for Plover 4+
+        # Hook translated event on engine (correct for Plover 4+)
         self.engine.hook_connect('translated', self.on_translated)
         if self.f:
             self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'translated' on engine\n")
             self.f.flush()
 
     def stop(self) -> None:
+        # Disconnect hook
         self.engine.hook_disconnect('translated', self.on_translated)
         if self.f:
             self.f.write(f"[{datetime.now().strftime('%F %T')}] === GhostStroke plugin stopped ===\n")
@@ -66,16 +67,16 @@ class GhostStroke:
                     self.f.write(f"Found FP in action: {text}\n")
                     self.f.flush()
 
-                    # Remove F and P from text
+                    # Remove F and P from the text
                     new_text = text.replace('F', '').replace('P', '')
                     if not new_text.strip():
                         self.f.write(f"Cannot handle empty result after FP removal: {text}\n")
                         self.f.flush()
                         continue
 
-                    # Lookup translation using the cleaned strokes
                     try:
-                        stroke_objs = tuple(Stroke.from_steno(s) for s in new_text.split(' '))
+                        # Treat new_text as a single chord for lookup
+                        stroke_objs = (Stroke.from_steno(new_text),)
                         result = self.engine.dictionaries.lookup(stroke_objs)
                     except Exception as e:
                         self.f.write(f"Error converting strokes: {e}\n")
@@ -87,7 +88,7 @@ class GhostStroke:
                         self.f.flush()
                         self._processing = True
                         try:
-                            # Remove the original output
+                            # Remove untranslated output
                             for _ in range(len(text)):
                                 self.engine.output.send_backspaces(1)
                             # Send the translation
