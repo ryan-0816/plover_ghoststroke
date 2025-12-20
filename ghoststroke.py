@@ -68,14 +68,17 @@ class GhostStroke:
             self.f.flush()
             self._processing = True
             try:
+                # Delete the original untranslated stroke output (TKPWAEUFP)
+                self.engine.output.send_backspaces(len(stroke_str))
+                self.f.write(f"Sent {len(stroke_str)} backspaces\n")
+                self.f.flush()
+                
                 # Create a new stroke without FP and send it
                 new_stroke = Stroke.from_steno(cleaned)
                 self.engine._machine_stroke_callback(new_stroke)
+                
                 # Add a period stroke
                 period_stroke = Stroke.from_steno('TP-PL')  # Standard period stroke, adjust if needed
                 self.engine._machine_stroke_callback(period_stroke)
             finally:
                 self._processing = False
-            
-            # Return True to suppress the original stroke
-            return True
