@@ -6,4 +6,12 @@ TKPWAEUFP → gay.
 
 However, this only works if the chord "TKPWAEUFP" is not found in any dictionary while "TKPWAEU" is.
 
+Other examples:
+
+PHOR/PWEUD → morbid
+PHOR/PWEUFPD → morbid.
+
+WOUT → without
+WOUFPT → without.
+
 Still a work in progress!
