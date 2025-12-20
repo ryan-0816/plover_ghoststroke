@@ -39,7 +39,7 @@ class GhostStroke:
         self.f.write(f"[{datetime.now().strftime('%F %T')}] Received stroke: {stroke_str}\n")
         self.f.flush()
 
-        if "FP" not in stroke_str:
+        if ("FP" or "FRP") not in stroke_str:
             return
 
         self.f.write(f"Found FP in stroke: {stroke_str}\n")
@@ -60,7 +60,7 @@ class GhostStroke:
         self.f.flush()
 
         # Remove "FP" substring
-        cleaned = stroke_str.replace('FP', '')
+        cleaned = stroke_str.replace('FP', '').replace('FRP', 'R')
         if cleaned.endswith('-'):
             cleaned = cleaned[:-1]
         if not cleaned:
