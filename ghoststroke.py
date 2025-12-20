@@ -3,6 +3,7 @@ from datetime import datetime
 
 from plover.engine import StenoEngine
 from plover.oslayer.config import CONFIG_DIR
+from plover.steno import Stroke
 
 class GhostStroke:
     fname = os.path.join(CONFIG_DIR, 'ghoststroke.txt')
@@ -19,60 +20,62 @@ class GhostStroke:
         self.f.write(f"[{datetime.now().strftime('%F %T')}] === GhostStroke plugin started ===\n")
         self.f.flush()
 
-        # Hook translated event
-        self.engine.hook_connect('translated', self.on_translated)
-        self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'translated'\n")
+        # Hook stroked event instead of translated
+        self.engine.hook_connect('stroked', self.on_stroked)
+        self.f.write(f"[{datetime.now().strftime('%F %T')}] Hook connected to 'stroked'\n")
         self.f.flush()
 
     def stop(self) -> None:
-        self.engine.hook_disconnect('translated', self.on_translated)
+        self.engine.hook_disconnect('stroked', self.on_stroked)
         self.f.write(f"[{datetime.now().strftime('%F %T')}] === GhostStroke plugin stopped ===\n")
         self.f.close()
         self.f = None
 
-    def on_translated(self, old, new):
+    def on_stroked(self, stroke: Stroke):
         if self._processing or not self.f:
             return
 
-        for action in new:
-            text = getattr(action, 'text', '')
-            if not text:
-                continue
+        # Get the stroke as a string
+        stroke_str = stroke.rtfcre
+        
+        self.f.write(f"[{datetime.now().strftime('%F %T')}] Received stroke: {stroke_str}\n")
+        self.f.flush()
 
-            self.f.write(f"[{datetime.now().strftime('%F %T')}] Processing action: {text}\n")
+        # Detect exact "FP" substring
+        if "FP" not in stroke_str:
+            return
+
+        self.f.write(f"Found FP in stroke: {stroke_str}\n")
+        self.f.flush()
+
+        # Remove "FP" substring
+        cleaned = stroke_str.replace('FP', '')
+        if not cleaned:
+            self.f.write("Stroke empty after FP removal, skipping\n")
             self.f.flush()
+            return
 
-            # Detect exact "FP" substring
-            if "FP" not in text:
-                continue
-
-            self.f.write(f"Found exact FP in chord: {text}\n")
+        try:
+            # Lookup in dictionary using tuple of strings
+            result = self.engine.dictionaries.lookup((cleaned,))
+        except Exception as e:
+            self.f.write(f"Error looking up cleaned stroke: {e}\n")
             self.f.flush()
+            return
 
-            # Remove "FP" substring
-            cleaned = text.replace('FP', '')
-            if not cleaned:
-                self.f.write("Chord empty after FP removal, skipping\n")
-                self.f.flush()
-                continue
-
+        if result:
+            self.f.write(f"Translation found: {result}\n")
+            self.f.flush()
+            self._processing = True
             try:
-                # Lookup in dictionary using tuple of strings
-                result = self.engine.dictionaries.lookup((cleaned,))
-            except Exception as e:
-                self.f.write(f"Error looking up cleaned chord: {e}\n")
-                self.f.flush()
-                continue
-
-            if result:
-                self.f.write(f"Translation found: {result}\n")
-                self.f.flush()
-                self._processing = True
-                try:
-                    # Delete the original untranslated chord output
-                    for _ in range(len(text)):
-                        self.engine.output.send_backspaces(1)
-                    # Send the translation with a period
-                    self.engine.output.send_string(result + '.')
-                finally:
-                    self._processing = False
+                # Create a new stroke without FP and send it
+                new_stroke = Stroke.from_steno(cleaned)
+                self.engine._machine_stroke_callback(new_stroke)
+                # Add a period stroke
+                period_stroke = Stroke.from_steno('TP-PL')  # Standard period stroke, adjust if needed
+                self.engine._machine_stroke_callback(period_stroke)
+            finally:
+                self._processing = False
+            
+            # Return True to suppress the original stroke
+            return True
