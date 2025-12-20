@@ -40,21 +40,24 @@ class GhostStroke:
             self.f = None
 
     def on_translated(self, old, new):
-        """Process Action objects and detect FP strokes."""
+        """Process Action objects and detect FP strokes using original chord data."""
         if not self.f:
             return
 
         try:
-            # Log hook firing
             self.f.write(f"[{datetime.now().strftime('%F %T')}] on_translated fired! new={new}\n")
             self.f.flush()
 
             for action in reversed(new):
-                text = getattr(action, 'text', None)
-                if not text:
+                # Use the original strokes (steno_list) instead of text
+                strokes = getattr(action, 'steno_list', None)
+                if not strokes:
                     continue
 
-                self.f.write(f"[{datetime.now().strftime('%F %T')}] Processing action: {text}\n")
+                # Convert each stroke object to its steno string
+                stroke_strs = [s.steno for s in strokes]
+
+                self.f.write(f"[{datetime.now().strftime('%F %T')}] Processing strokes: {stroke_strs}\n")
                 self.f.flush()
 
                 if self._processing:
@@ -62,42 +65,51 @@ class GhostStroke:
                     self.f.flush()
                     continue
 
-                # Check if both F and P are present
-                if 'F' in text and 'P' in text:
-                    self.f.write(f"Found FP in action: {text}\n")
-                    self.f.flush()
+                # Check if any stroke contains both F and P
+                has_fp = any('F' in s and 'P' in s for s in stroke_strs)
+                if not has_fp:
+                    continue
 
-                    # Remove F and P from the text
-                    new_text = text.replace('F', '').replace('P', '')
-                    if not new_text.strip():
-                        self.f.write(f"Cannot handle empty result after FP removal: {text}\n")
-                        self.f.flush()
-                        continue
+                self.f.write(f"Found FP stroke: {stroke_strs}\n")
+                self.f.flush()
 
-                    try:
-                        # Treat new_text as a single chord for lookup
-                        stroke_objs = (Stroke.from_steno(new_text),)
-                        result = self.engine.dictionaries.lookup(stroke_objs)
-                    except Exception as e:
-                        self.f.write(f"Error converting strokes: {e}\n")
-                        self.f.flush()
-                        continue
-
-                    if result:
-                        self.f.write(f"Found translation: {result}\n")
-                        self.f.flush()
-                        self._processing = True
-                        try:
-                            # Remove untranslated output
-                            for _ in range(len(text)):
-                                self.engine.output.send_backspaces(1)
-                            # Send the translation
-                            self.engine.output.send_string(result + '.')
-                        finally:
-                            self._processing = False
+                # Remove F and P from strokes
+                cleaned_strokes = []
+                for s in stroke_strs:
+                    if 'F' in s and 'P' in s:
+                        cleaned = s.replace('F', '').replace('P', '')
+                        if not cleaned.strip():
+                            self.f.write(f"Cannot handle empty stroke after removal: {s}\n")
+                            self.f.flush()
+                            continue
+                        cleaned_strokes.append(cleaned)
                     else:
-                        self.f.write(f"No translation found for: {new_text}\n")
-                        self.f.flush()
+                        cleaned_strokes.append(s)
+
+                try:
+                    # Convert cleaned steno strings to Stroke objects
+                    stroke_objs = tuple(Stroke.from_steno(s) for s in cleaned_strokes)
+                    result = self.engine.dictionaries.lookup(stroke_objs)
+                except Exception as e:
+                    self.f.write(f"Error converting strokes for lookup: {e}\n")
+                    self.f.flush()
+                    continue
+
+                if result:
+                    self.f.write(f"Found translation: {result}\n")
+                    self.f.flush()
+                    self._processing = True
+                    try:
+                        # Remove the untranslated output
+                        for _ in range(len(stroke_strs)):
+                            self.engine.output.send_backspaces(1)
+                        # Send the correct translation
+                        self.engine.output.send_string(result + '.')
+                    finally:
+                        self._processing = False
+                else:
+                    self.f.write(f"No translation found for cleaned strokes: {cleaned_strokes}\n")
+                    self.f.flush()
 
         except Exception as e:
             self.f.write(f"on_translated error: {e}\n")
