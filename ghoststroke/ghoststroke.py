@@ -57,6 +57,7 @@ class GhostStroke:
         best_match = None
         best_strokes = None
         best_backspace_count = 0
+        original_output = ""
         
         # Try looking back up to 5 strokes for multi-stroke words
         for lookback in range(1, min(6, len(translations) + 1)):
@@ -82,6 +83,7 @@ class GhostStroke:
                         best_match = result
                         best_strokes = stroke_tuple
                         best_backspace_count = backspace_count
+                        original_output = total_output
                 except Exception:
                     pass
         
@@ -93,10 +95,25 @@ class GhostStroke:
                     best_match = result
                     best_strokes = (cleaned_last,)
                     best_backspace_count = len(stroke_str)
+                    original_output = ""
             except Exception:
                 pass
         
-        return best_match, best_strokes, best_backspace_count
+        return best_match, best_strokes, best_backspace_count, original_output
+
+    def should_capitalize(self, original_output, best_match):
+        """Determine if the output should be capitalized based on original output."""
+        if original_output and original_output[0].isupper():
+            return True
+        if not original_output and best_match and best_match[0].isupper():
+            return True
+        return False
+
+    def apply_capitalization(self, word):
+        """Capitalize the first letter of a word."""
+        if word:
+            return word[0].upper() + word[1:] if len(word) > 1 else word.upper()
+        return word
 
     def on_stroked(self, stroke: Stroke):
         if self._processing or not self.f:
@@ -123,11 +140,16 @@ class GhostStroke:
             return
 
         # Find the best matching translation
-        best_match, best_strokes, best_backspace_count = self.lookup_best_match(
+        best_match, best_strokes, best_backspace_count, original_output = self.lookup_best_match(
             cleaned_last, stroke_str
         )
 
         if best_match:
+            # Apply capitalization if needed
+            output_word = best_match
+            if self.should_capitalize(original_output, best_match):
+                output_word = self.apply_capitalization(output_word)
+            
             self._processing = True
             try:
                 from plover.oslayer import keyboardcontrol
@@ -136,15 +158,15 @@ class GhostStroke:
                 # Send backspaces to delete raw steno
                 kb.send_backspaces(best_backspace_count)
                 
-                # Send the translated word
-                kb.send_string(best_match)
+                # Send the translated word (with capitalization if needed)
+                kb.send_string(output_word)
                 
                 # Send the additional stroke (e.g., period)
                 if addition_stroke:
                     addition = Stroke.from_steno(addition_stroke)
                     self.engine._machine_stroke_callback(addition)
                 
-                self.f.write(f"[{datetime.now().strftime('%F %T')}] {stroke_str} -> {best_match} + {addition_stroke}\n")
+                self.f.write(f"[{datetime.now().strftime('%F %T')}] {stroke_str} -> {output_word} + {addition_stroke}\n")
                 self.f.flush()
             finally:
                 self._processing = False

@@ -16,4 +16,6 @@ WOUT → without
 
 WOUFPT → without.
 
+Yes, I know you could just add the direct entries, but this was a fun project.
+
 Still a work in progress!
