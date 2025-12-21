@@ -11,7 +11,7 @@ Example:
   PHOR/PWEUFPD → looks up PHOR/PWEUD → outputs "morbid."
 """
 
-__version__ = '0.0.1'
+__version__ = '0.1.0'
 
 from plover_ghoststroke.ghoststroke import GhostStroke
 
